@@ -43,4 +43,4 @@ function genLatex() {
 
 genLatex()
 
-server.listen(process.argv[3] || 3000)
+server.listen(3000)
