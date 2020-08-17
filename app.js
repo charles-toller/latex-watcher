@@ -5,13 +5,14 @@ if (process.argv.length < 3) {
   process.exit(1)
 }
 let texFile = process.argv[2]
+let texRunner = process.argv[4] || "pdflatex";
 let pdfFile = path.dirname(texFile) + path.sep + path.basename(texFile, '.tex') + '.pdf';
 let logText = "";
 
 let express = require('express')
 let app = express()
 let server = require('http').Server(app)
-app.use(express.static('dist'))
+app.use(express.static(path.resolve(__dirname, 'dist')));
 app.get('/latex.pdf', (req, res) => {
   if (pdfFile === "LOG") {
     res.send(logText);
@@ -34,8 +35,25 @@ fs.watchFile(texFile, (curr, prev) => {
 
 let childProcess = require('child_process')
 
+let vm = require('vm');
+function preprocessLatex() {
+  const file = fs.readFileSync(texFile).toString();
+  const context = vm.createContext({
+    output: ""
+  });
+  const reg = /^%%js(.*)$/gm;
+  let out = file.replace(reg, (_, code) => {
+    context.output = null;
+    output = new (vm.Script)(code).runInContext(context);
+    return context.output ?? output;
+  });
+  return out;
+}
+
 function genLatex() {
-  childProcess.exec('pdflatex -interaction=nonstopmode ' + path.basename(texFile), {
+  let input = preprocessLatex();
+  let cmd = `${texRunner} -interaction=nonstopmode -jobname ${path.basename(texFile, ".tex")}`;
+  const p = childProcess.exec(cmd, {
     cwd: path.dirname(texFile),
   }, (error) => {
     if (!error) {
@@ -63,7 +81,8 @@ function genLatex() {
 </html>`;
     }
     io.emit('reload')
-  })
+  });
+  p.stdin.write(input);
 
 }
 
