@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.15.4",
+    "nerdamer": "^1.1.5",
     "socket.io": "^2.0.3"
   }
 }

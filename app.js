@@ -35,24 +35,55 @@ fs.watchFile(texFile, (curr, prev) => {
 
 let childProcess = require('child_process')
 
+let nerdamer = require('nerdamer');
+
 let vm = require('vm');
-function preprocessLatex() {
-  const file = fs.readFileSync(texFile).toString();
-  const context = vm.createContext({
-    output: ""
-  });
-  const reg = /^%%js(.*)$/gm;
+function preprocess(fileName, reg) {
+  const file = fs.readFileSync(fileName).toString();
+  let context;
+  const origContext = {
+    console,
+    output: "",
+    NONE: Symbol("no output"),
+    nerdamer,
+    resetContext() {
+      context = vm.createContext({...origContext})
+      new (vm.Script)(fs.readFileSync(__dirname + "/lib.js")).runInContext(context);
+      return this.NONE;
+    }
+  };
+  origContext.resetContext();
+  let dirty = false;
   let out = file.replace(reg, (_, code) => {
+    dirty = true;
     context.output = null;
-    output = new (vm.Script)(code).runInContext(context);
-    return context.output ?? output;
+    let output;
+    try {
+      output = new (vm.Script)(code).runInContext(context);
+    }
+    catch (e) {
+      console.error(e);
+      output = "error";
+      context.output = null;
+    }
+    let out = context.output ?? output;
+    return out === context.NONE ? "" : out;
   });
-  return out;
+  return dirty ? out : null;
 }
 
+const preprocessLatex = preprocess.bind(null, texFile, /^%%js(.*)$/gm);
+const generateLatex = preprocess.bind(null, texFile, /^%%generate(.*)$/gm);
+
 function genLatex() {
+  const generated = generateLatex();
+  if (generated) {
+    fs.writeFileSync(texFile, generated);
+  }
   let input = preprocessLatex();
-  let cmd = `${texRunner} -interaction=nonstopmode -jobname ${path.basename(texFile, ".tex")}`;
+  const fileName = `${path.basename(texFile, ".tex")}${input == null ? '' : '.template'}.tex`;
+  if (input != null) fs.writeFileSync(path.resolve(path.dirname(texFile), fileName), input);
+  let cmd = `${texRunner} -interaction=nonstopmode -jobname ${path.basename(texFile, ".tex")} ${fileName}`;
   const p = childProcess.exec(cmd, {
     cwd: path.dirname(texFile),
   }, (error) => {
@@ -82,7 +113,6 @@ function genLatex() {
     }
     io.emit('reload')
   });
-  p.stdin.write(input);
 
 }
 
